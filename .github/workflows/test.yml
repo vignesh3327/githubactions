@@ -1,15 +1,15 @@
 name: Terraform Deploy
 
 on:
-  # push:
-  #   branches: [ main ]
   workflow_dispatch:   # ✅ Manual trigger only
 
-
 jobs:
-  terraform:
+  # ==========================================
+  # JOB 1: TERRAFORM PLAN
+  # ==========================================
+  plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
-
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -31,5 +31,44 @@ jobs:
       - name: Terraform Plan
         run: terraform plan -out=tfplan
 
+      # Save the plan file so the apply job can use it
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+          retention-days: 1
+
+  # ==========================================
+  # JOB 2: TERRAFORM APPLY (Requires Approval)
+  # ==========================================
+  apply:
+    name: Terraform Apply
+    needs: plan                 # Wait for the plan job to finish
+    runs-on: ubuntu-latest
+    environment: production     # 👈 This triggers the manual approval in GitHub
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1 
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Retrieve the saved plan file from the previous job
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+
+      # Terraform must be re-initialized on this new runner
+      - name: Terraform Init
+        run: terraform init
+
+      # Apply the exact plan generated in Job 1
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
